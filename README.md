@@ -35,6 +35,25 @@
 
 ---
 
+#### 📁 项目结构
+
+```
+src/
+├── models.py              # 数据模型、配置、文件类型检测
+├── decryptor.py           # QQMusicDecryptor (FRIDA Hook 解密)
+├── converter.py           # AudioConverter (flac/oggdec/lame/ffmpeg 工具链)
+├── worker.py              # BatchConverter (纯逻辑批量转换，不依赖 GUI)
+├── gui.py                 # ConverterGUI + main() (tkinter 界面)
+├── qqmusic_converter_gui.py  # 入口文件，兼容旧运行方式
+├── hook_qqmusic_v17.js    # FRIDA 脚本
+├── flac.exe + libFLAC*.dll   # FLAC 解码器
+├── oggdec.exe             # OGG 解码器
+├── lame.exe + lame_enc.dll   # MP3 编码器
+└── config.json            # 用户配置
+```
+
+---
+
 #### 📦 运行方式
 
 ##### 方式一：Python 源码运行
@@ -48,8 +67,26 @@ python src/qqmusic_converter_gui.py
 
 ```bash
 pip install pyinstaller
-pyinstaller -F -w src/qqmusic_converter_gui.py --add-data "src/flac.exe;src" --add-data "src/oggdec.exe;src" --add-data "src/lame.exe;src" --add-data "src/lame_enc.dll;src" --add-data "src/libFLAC.dll;src" --add-data "src/libFLAC++.dll;src" --add-data "src/hook_qqmusic_v17.js;src"
+pyinstaller -F -w src/qqmusic_converter_gui.py \
+  --add-data "src/models.py;src" \
+  --add-data "src/decryptor.py;src" \
+  --add-data "src/converter.py;src" \
+  --add-data "src/worker.py;src" \
+  --add-data "src/gui.py;src" \
+  --add-data "src/hook_qqmusic_v17.js;src" \
+  --add-data "src/flac.exe;src" \
+  --add-data "src/oggdec.exe;src" \
+  --add-data "src/lame.exe;src" \
+  --add-data "src/lame_enc.dll;src" \
+  --add-data "src/libFLAC.dll;src" \
+  --add-data "src/libFLAC++.dll;src"
 ```
+
+> 如果使用 Python 3.8+ 的 `--add-data` 简写：
+> ```bash
+> pyinstaller -F -w src/qqmusic_converter_gui.py --collect-all src
+> ```
+> 或直接用 `pyinstaller -F -w src/qqmusic_converter_gui.py`，因为 Python 会自动发现同目录的 `.py` 导入。
 
 ---
 
@@ -85,3 +122,4 @@ pyinstaller -F -w src/qqmusic_converter_gui.py --add-data "src/flac.exe;src" --a
 3. **flac 容错解码**：某些 FLAC 文件帧损坏导致 `flac.exe` 失败，已添加 `ffmpeg` fallback
 4. **临时文件冲突**：同名不同扩展名文件解密时临时文件互相覆盖，已使用唯一命名
 5. **`.mmp4` 状态显示**：转 MP3 时不应显示"失败"，已改为"不支持转MP3"
+6. **代码结构重构**：将单文件 947 行拆分为 6 个模块（`models/decryptor/converter/worker/gui/入口`），各模块职责单一
