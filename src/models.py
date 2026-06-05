@@ -12,13 +12,25 @@ from typing import Dict
 
 
 def get_app_dir() -> Path:
-    """获取程序所在目录（兼容开发环境和 PyInstaller 打包环境）"""
-    # PyInstaller 单文件模式下，__file__ 指向临时解压目录中的脚本路径
-    # 例如：sys._MEIPASS/src/xxx.py -> 返回 sys._MEIPASS/src/
+    """获取用户数据目录（配置、日志保存到这里）"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后：exe 所在目录（如桌面、dist/）
+        return Path(sys.executable).parent
+    # 开发环境：src/ 目录
+    return Path(__file__).parent
+
+
+def get_data_dir() -> Path:
+    """获取程序资源目录（工具、脚本从这里读取）"""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # PyInstaller onefile 模式：资源在临时解压目录的 src/ 子目录下
+        return Path(sys._MEIPASS) / "src"
+    # 开发环境 或 onedir 模式
     return Path(__file__).parent
 
 
 APP_DIR = get_app_dir()
+DATA_DIR = get_data_dir()
 
 # UI 显示用的类型名称映射
 TYPE_LABELS = {
@@ -54,7 +66,7 @@ class FileItem:
 
 class Config:
     """配置管理"""
-    CONFIG_FILE = APP_DIR / "config.json"
+    CONFIG_FILE = get_app_dir() / "config.json"
 
     @classmethod
     def load(cls) -> Dict:

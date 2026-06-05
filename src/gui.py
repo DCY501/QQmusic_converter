@@ -185,7 +185,7 @@ class ConverterGUI:
 
         # 输出路径
         ttk.Label(settings_frame, text="保存到:").grid(row=0, column=0, sticky=W, padx=(0, 5))
-        default_output = self.config.get('output_path', str((APP_DIR.parent / "converted").resolve()))
+        default_output = self.config.get('output_path', str((APP_DIR / "converted").resolve()))
         self.output_path_var = StringVar(value=default_output)
         ttk.Entry(settings_frame, textvariable=self.output_path_var).grid(row=0, column=1, sticky=(W, E), padx=(0, 5))
         ttk.Button(settings_frame, text="浏览...", command=self.browse_output).grid(row=0, column=2)

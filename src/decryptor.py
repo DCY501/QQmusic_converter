@@ -9,7 +9,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from models import APP_DIR
+from models import DATA_DIR
 
 
 class QQMusicDecryptor:
@@ -36,7 +36,7 @@ class QQMusicDecryptor:
         try:
             import frida
             self.session = frida.attach("QQMusic.exe")
-            js_path = APP_DIR / "hook_qqmusic_v17.js"
+            js_path = DATA_DIR / "hook_qqmusic_v17.js"
             with open(js_path, "r", encoding="utf-8") as f:
                 js_code = f.read()
             self.script = self.session.create_script(js_code)

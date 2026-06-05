@@ -10,18 +10,18 @@ import shutil
 from pathlib import Path
 from typing import List, Tuple
 
-from models import APP_DIR
+from models import DATA_DIR
 
 
 class AudioConverter:
     """音频转换器 - 封装小工具链"""
 
     def __init__(self):
-        self.flac_path = APP_DIR / "flac.exe"
-        self.oggdec_path = APP_DIR / "oggdec.exe"
-        self.lame_path = APP_DIR / "lame.exe"
+        self.flac_path = DATA_DIR / "flac.exe"
+        self.oggdec_path = DATA_DIR / "oggdec.exe"
+        self.lame_path = DATA_DIR / "lame.exe"
         # ffmpeg 作为备选解码器（处理 flac.exe 无法解码的损坏/特殊 FLAC）
-        self.ffmpeg_path = APP_DIR.parent / "ffmpeg.exe"
+        self.ffmpeg_path = DATA_DIR.parent / "ffmpeg.exe"
         self._check_tools()
 
     def _check_tools(self):
