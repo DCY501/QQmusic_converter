@@ -12,9 +12,9 @@ from typing import Dict
 
 
 def get_app_dir() -> Path:
-    """获取程序所在目录（兼容开发环境和打包环境）"""
-    if getattr(sys, 'frozen', False):
-        return Path(sys.executable).parent
+    """获取程序所在目录（兼容开发环境和 PyInstaller 打包环境）"""
+    # PyInstaller 单文件模式下，__file__ 指向临时解压目录中的脚本路径
+    # 例如：sys._MEIPASS/src/xxx.py -> 返回 sys._MEIPASS/src/
     return Path(__file__).parent
 
 
