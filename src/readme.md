@@ -1,5 +1,16 @@
 ### 源代码目录 (Source Code)
 
+#### 模块结构
+
+| 文件 | 职责 |
+|------|------|
+| `models.py` | 数据模型 (`FileItem`, `Config`)、文件类型检测 (`detect_file_type`)、常量 |
+| `decryptor.py` | `QQMusicDecryptor` — FRIDA Hook 解密器 |
+| `converter.py` | `AudioConverter` — 音频工具链封装 (flac/oggdec/lame/ffmpeg) |
+| `worker.py` | `BatchConverter` — 纯逻辑的批量转换工作器，不依赖 GUI |
+| `gui.py` | `ConverterGUI` + `main()` — tkinter 界面和事件处理 |
+| `qqmusic_converter_gui.py` | 入口文件，兼容旧运行方式 |
+
 #### 实现原理
 
 **加密文件处理**：通过 FRIDA attach 到 `QQMusic.exe`，Hook `QQMusicCommon.dll` 的 `EncAndDesMediaFile` 类，让 QQ 音乐自身完成解密。
@@ -13,15 +24,6 @@
 | 备选 | `ffmpeg.exe` | `flac.exe` 遇到损坏帧失败时自动 fallback |
 | 编码 | `lame.exe` | WAV → MP3（VBR / 320k / 192k） |
 | 清理 | - | 转换完成后自动删除中间临时文件 |
-
-#### 文件说明
-
-- `qqmusic_converter_gui.py` - 主程序，提供 GUI 界面、FRIDA 解密管理和转换流程控制
-- `hook_qqmusic_v17.js` - FRIDA 17.x 兼容的 Hook 脚本
-- `flac.exe` + `libFLAC.dll` + `libFLAC++.dll` - FLAC 解码器
-- `oggdec.exe` - OGG Vorbis 解码器
-- `lame.exe` + `lame_enc.dll` - MP3 编码器
-- `config.json` - 用户配置（输出路径、格式、音质）
 
 #### 支持格式
 
