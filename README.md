@@ -1,124 +1,148 @@
-# QQ 音乐解密 / 转码工具
+# QQ Music Converter
 
-Windows 桌面工具，保留简洁的 Tkinter 界面，支持批量处理本地音乐文件。个人学习娱乐使用。
+将 QQ 音乐客户端下载的本地文件转换为常见音频格式，也支持普通音频批量转 MP3。Windows 图形界面，拖入文件即可开始。
 
-## 使用
+[![Release](https://img.shields.io/github/v/release/DCY501/QQmusic_converter)](https://github.com/DCY501/QQmusic_converter/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows_x64-0078D4)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-1. 添加文件、添加文件夹，或将文件/文件夹拖入窗口。
-2. 选择输出目录，以及“保持原格式”或“统一转 MP3”。
-3. 点击“开始处理”。需要解密时，请先运行兼容的 QQ 音乐客户端。
-4. 点击条目的“打开输出”“查看原因”或“查看提示”；失败后可点“重试失败”。
-5. 要换格式或音质，可多选文件，右键“重新处理选中项”；右键“文件详情”可查看完整源/输出路径、时长、采样率和标签。
+**[下载最新版](https://github.com/DCY501/QQmusic_converter/releases/latest)** · [快速上手](#快速上手) · [格式支持](#格式支持) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
-同名输出自动编号，例如 `歌曲 (2).mp3`。源文件已在目标位置时跳过。转换先在独立临时目录完成，成功后再提交结果，不覆盖原文件和已有输出。
+![主界面](docs/images/main-window.png)
 
-新版在同一 Windows 登录会话中只运行一个窗口，重复启动会通知并唤起已有窗口，不再加载和改写另一份任务列表。程序异常退出后锁自动释放。旧版不具备此机制，使用时请统一启动新版。
+## 下载
 
-“停止处理”表示**当前文件完成后停止**。关闭窗口也会等当前文件处理和资源清理完成。未处理的条目可继续；“重试失败”只处理失败条目。
+前往 **[Releases](https://github.com/DCY501/QQmusic_converter/releases/latest)**，在 Assets 中选择：
 
-处理时，上方进度条显示整个批次，下方显示当前阶段；空闲时隐藏进度条，无待处理文件时禁用开始按钮。阶段包括连接、解密、解码、编码、保留标签和保存结果；解码/编码支持读取工具实际进度，无法取得百分比时显示活动指示和当前文件耗时。
+| 文件 | 适合谁 | 使用方式 |
+| --- | --- | --- |
+| `QQMusicConverter-Windows-x64.zip` | 推荐，包含 FFmpeg，支持全部已实现功能 | 解压后运行 `QQMusicConverter.exe` |
+| `qqmusic_converter_gui.exe` | 只需要基础转换，希望下载更小 | 直接运行；需要时另行添加 FFmpeg |
+| `SHA256SUMS.txt` | 需要核对下载文件完整性 | 与本地文件的 SHA-256 对比 |
 
-所有新输出在正式保存前默认进行基础校验：确认真实音频格式、参数有效，并比较源音频和输出时长（允许少量编码延迟差异）。勾选“完整解码校验”后，还会用 FFmpeg 从头到尾解码输出，发现错误即判失败，临时输出不提交。基础校验不能保证每个音频帧都无损坏；完整校验需要 FFmpeg 并增加处理时间。结果可在“文件详情”中查看，随任务记录保存；旧任务未校验时明确显示暂无记录。
+运行发布版不需要安装 Python。完整包中的 `ffmpeg.exe` 请与主程序放在同一目录；升级时先退出旧版，再解压到新文件夹。
 
-“工具 → 环境与兼容性诊断”可检查 QQ 音乐进程架构、文件版本、必要导出函数和本地工具，并复制诊断信息。解密前会执行同样的接口检查；当前仅支持具有所需接口的 32 位 QQ 音乐。接口检查通过仍不保证每个文件都能解密，文件权限、文件状态及客户端实现仍可能影响结果。
+> 加密文件需要先通过 QQ 音乐客户端下载，并在处理时运行兼容的客户端。当前解密接口支持 **32 位 QQ 音乐**，已实测文件版本 **22.5.0.0**；其他版本请先使用“工具 → 环境与兼容性诊断”检查。发布程序本身为 Windows 64 位程序。
 
-自动保存最近一次窗口的任务列表与设置，重新打开后恢复但不会自动开始转换。恢复时校验源文件和输出的大小、修改时间；输出丢失/变化或源文件变化会回到等待状态，源文件无法访问会显示失败原因。异常退出时正在处理的文件会从头重做，已完整保存并记录的文件不会重复处理。清空列表也会清空保存的任务记录。
+## 快速上手
+
+1. **添加文件**：拖入音频或文件夹，也可以点击“添加文件 / 添加文件夹”。
+2. **选择输出**：设置保存目录，选择“保持原格式”或“统一转 MP3”。
+3. **开始处理**：如需解密，先打开 QQ 音乐；普通音频无需运行客户端。
+4. **查看结果**：点击列表中的“打开输出”。失败条目可查看原因，再点击“重试失败”。
+
+需要换音质或格式时，选中文件，右键选择 **重新处理选中项**。右键 **文件详情** 可查看路径、时长、采样率、标签和校验结果。
+
+## 功能
+
+- **批量转换**：添加文件夹、拖拽导入、重复文件去重；单个文件失败后继续处理其余文件。
+- **输出保护**：完成转换与校验后才保存结果。同名文件自动编号，不覆盖源文件和已有输出。
+- **任务恢复**：记住列表与设置，重开后继续处理；恢复时检查源文件及输出是否发生变化。
+- **音质与标签**：MP3 支持 VBR 高质量、CBR 320k、CBR 192k；尽量保留常用标签、歌词和内嵌封面。
+- **进度与诊断**：显示当前文件、处理阶段和耗时；提供失败重试、错误日志及客户端兼容性检查。
+- **输出校验**：默认检查格式、音频参数与时长；可选使用 FFmpeg 对输出执行完整解码校验。
+
+“停止处理”会在 **当前文件完成并清理后停止**。关闭窗口也会等待当前文件完成；重新打开不会自动开始转换。重复启动新版会唤起已有窗口。
 
 ## 格式支持
 
-| 输入 | 保持原格式 | 转 MP3 |
-|---|---|---|
+| 输入格式 | 保持原格式 | 转 MP3 |
+| --- | --- | --- |
 | MFLAC / MFLAC0 | 解密为 FLAC | 支持 |
 | MGG / MGG0 / MGG1 / MGGL | 解密为 OGG | 支持 |
-| MMP4 | 解密为 MP4 | 有 FFmpeg 时支持，否则提示并跳过 |
+| MMP4 | 解密为 MP4 | 需要 FFmpeg |
 | FLAC / OGG / WAV | 原样复制 | 支持 |
 | MP3 | 原样复制 | 原样复制，不重复编码 |
-| M4A / MP4 | 原样复制 | 有 FFmpeg 时支持，否则提示并跳过 |
+| M4A / MP4 | 原样复制 | 需要 FFmpeg |
 
-转码迁移常用标签：歌名、歌手、专辑、专辑歌手、作曲、流派、日期、曲目/碟号、歌词、备注，以及 FLAC/OGG、MP4/M4A 的内嵌封面和 WAV 的 ID3 封面。并非所有自定义标签都能迁移。标签处理失败时保留正常音频，在列表中单独提示。
+MP4 / M4A 转 MP3 时只取第一条音轨，不输出视频，多声道会混合为立体声。标签迁移覆盖常用字段，并非所有自定义标签；标签处理失败时保留正常音频并单独提示。
 
-MP4/M4A 只转换第一条音轨，视频不输出，多声道音频混合为立体声 MP3；选择“保持原格式”则保留解密/复制后的原文件。
+## 常见问题
 
-普通音频不需要 QQ 音乐或 Frida 连接成功。混合批次中，连接失败只影响加密文件。
+### 需要 VIP 吗？
 
-## 运行与打包
+本工具处理已经下载到本地的文件，不提供音乐下载，也不改变 QQ 音乐账号的下载权限。需要 VIP 才能下载的内容，仍需先满足客户端的下载条件。
 
-需要 Windows、Python 3.8+（本机验证为 Python 3.12.1）。在项目根目录使用 PowerShell：
+### 为什么加密文件转换失败？
+
+先确认 QQ 音乐已启动，再运行 **工具 → 环境与兼容性诊断**。客户端架构、版本接口、文件状态与权限都可能影响解密。接口检查通过仍需以实际文件处理结果为准。
+
+### 什么时候需要 FFmpeg？
+
+MMP4 / M4A / MP4 转 MP3、完整解码校验，以及 FLAC 备用解码需要 FFmpeg。完整 ZIP 包已包含；单 EXE 用户可从 [FFmpeg 下载页](https://ffmpeg.org/download.html)获取 Windows 构建，将 `ffmpeg.exe` 放到主程序同级目录。
+
+### 基础校验和完整校验有什么区别？
+
+基础校验检查输出格式、参数和时长，速度较快，但不能保证每个音频帧都没有损坏。完整解码校验会从头到尾解码输出，耗时更长；校验失败的临时文件不会提交为最终结果。
+
+### 配置、任务记录和日志在哪里？
+
+打开 **工具 → 打开配置目录**，即可找到本次运行实际使用的位置。
+
+| 文件 | 内容 |
+| --- | --- |
+| `config.json` | 输出目录、格式、音质和校验设置 |
+| `session.json` | 最近一次任务列表及状态 |
+| `error.log` | 处理失败的详细记录 |
+
+默认目录为 `%LOCALAPPDATA%\QQMusicConverter`。Windows 应用虚拟化可能将它重定向到另一磁盘，以菜单打开的位置为准。首次启动会尝试读取程序目录中的旧 `config.json`。
+
+## 开发与打包
+
+在 Windows 上使用 **Python 3.12** 验证。项目根目录中执行：
 
 ```powershell
+# 创建环境并安装固定版本依赖
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+# 从源码启动
 .\.venv\Scripts\python.exe src\qqmusic_converter_gui.py
-```
 
-新版程序：`dist\v5\QQMusicConverter.exe`。
-
-重新打包：运行 `./build.ps1`，脚本先执行测试，再生成 EXE。
-
-固定依赖见 `requirements.txt`，构建依赖见 `requirements-dev.txt`，资源清单见 `qqmusic_converter.spec`。EXE 包含解码器、编码器、Frida、拖拽组件和标签处理组件。FFmpeg 不内嵌在 EXE 中；若项目根目录有 `ffmpeg.exe`，打包脚本会将它复制到输出目录。
-
-可选的 `ffmpeg.exe` 放在 **QQMusicConverter.exe 同级目录**，用于 MP4/M4A 转码及 FLAC 备用解码；源码运行也会检查项目根目录。移动程序时一起携带 FFmpeg 即可保留这些能力。
-
-## 配置与日志
-
-- 配置：`%LOCALAPPDATA%\QQMusicConverter\config.json`。
-- “工具 → 打开配置目录”可打开本次运行实际使用的位置。Windows 应用虚拟化可能将此目录重定向到另一磁盘；保存时会解析实际目录，确保临时文件与目标位于同一位置。
-- 失败日志：`%LOCALAPPDATA%\QQMusicConverter\error.log`。
-- 最近一次任务：`%LOCALAPPDATA%\QQMusicConverter\session.json`（原子替换保存）。
-- 首次启动尝试读取应用目录中的旧 `config.json`；之后保存到用户配置目录。
-- 旧配置里的相对输出路径以应用目录为基准；保存时转换为绝对路径。
-- 配置损坏时使用默认设置；保存采用临时文件替换，避免破坏旧配置。
-- 扫描排除所选目录内部的输出目录和本工具工作目录，避免重复导入产物。
-
-## 开发验证
-
-```powershell
+# 运行回归测试
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+
+# 测试通过后打包
+.\build.ps1
 ```
 
-测试覆盖防覆盖与并发提交、混合批次、停止续跑、失败清理、标签降级、真实 WAV/FLAC/OGG/M4A 转换、中文路径、配置校验、目录扫描、任务恢复、文件详情、阶段进度和 Tk 界面流程。Hook 模拟测试需要 Node.js，OGG/M4A 集成测试需要可选 FFmpeg；缺少时对应测试跳过。
+当前构建输出为 `dist\v5\QQMusicConverter.exe`；`v5` 是本地构建目录名，正式发布版本以 Release 标签为准。若根目录存在 `ffmpeg.exe`，构建脚本会将它复制到输出目录。
 
-打包自检可调用 `QQMusicConverter.exe --self-check 报告路径.json`，等待进程退出后检查 JSON 的 `ok` 字段。自检验证资源、拖拽加载、真实转码、中文标签、任务记录恢复和文件详情；检测到 FFmpeg 时额外验证 M4A 转码与阶段进度。自检不连接 QQ 音乐或写入用户配置。
+Hook 模拟测试需要 Node.js；部分音频集成测试需要 FFmpeg，缺少时会跳过相应测试。打包版本支持 `--self-check 报告路径.json`，进程退出后检查报告中的 `ok` 字段。
 
-自检还覆盖单实例通知、基础校验和（有 FFmpeg 时的）完整解码校验。测试套件包含损坏音频帧、错误时长/格式、校验失败不提交输出、跨进程锁释放与不兼容客户端的清理行为。
+本版已通过 **52 项测试**及 EXE 自检。另已在 QQ 音乐 22.5.0.0（32 位）上实测 MGG、MFLAC、MMP4 及普通 FLAC / OGG 转 MP3，输出通过完整解码检查，源文件哈希未变；这不代表所有客户端版本及文件均兼容。
 
-自检在用户数据目录下创建独立临时目录，验证配置和任务记录的首次保存、覆盖与读取，结束后清理，不改动现有配置。GUI 回归测试还覆盖非法/空输出路径、无待处理任务时的按钮状态，以及保存恢复后的错误提示清除。
-
-2026-11-07 已通过源码批处理连接本机 QQ 音乐 22.05（32 位）实测：MGG、MFLAC、MMP4 解密成功；MGG、MFLAC 及普通 FLAC、OGG 转 MP3 成功，7 个输出均通过 FFmpeg 全文件解码检查，源文件 SHA-256 保持不变。首轮结果位于 `converted/live-test-20261107-b48ae4fb/`。
-
-本轮新增 MMP4 → MP3 也已实测通过：`converted/live-test-v3-20261107-6ac9ff90/`，包含《九万字》的输出和报告；全文件解码无报错，原文件哈希未变。
-
-v4 实测：客户端文件版本 22.5.0.0、架构 ia32，必要接口检查通过；项目下载目录的 5 首歌曲均成功转换并通过程序内的完整解码校验，源文件哈希未变。报告位于 `converted/live-test-v4-20261107-fb48844b/report.json`。
-
-当前 Hook 使用客户端导出函数及固定对象布局，以上验证不代表所有客户端版本和文件均兼容。
-
-## 项目结构
+<details>
+<summary>项目结构</summary>
 
 ```text
 src/
-  models.py                  文件模型、结果、格式映射、配置与路径
-  scanner.py                 后台扫描与文件检测
-  decryptor.py               Frida 会话和解密临时文件
-  hook_qqmusic_v17.js         客户端解密调用与读取完整性检查
-  converter.py               flac / oggdec / lame / ffmpeg 工具链
-  metadata.py                常用标签和封面迁移
-  session_store.py           任务持久化与恢复校验
-  file_details.py            本地文件与音频详情
-  audio_validation.py        输出格式、时长及完整解码校验
-  client_diagnostics.py      客户端接口检查与环境报告
-  single_instance.py         单实例运行与窗口唤起通知
-  worker.py                  批处理、失败隔离、输出提交、错误日志
-  gui.py                     界面与主线程事件队列
-  diagnostics.py             打包自检
-  qqmusic_converter_gui.py   入口
-tests/                       回归与集成测试
-build.ps1                    测试后打包
-qqmusic_converter.spec       PyInstaller 资源清单
+├── gui.py                    界面与主线程事件队列
+├── worker.py                 批处理、失败隔离与输出提交
+├── decryptor.py              QQ 音乐连接与解密
+├── hook_qqmusic_v17.js        客户端接口调用
+├── converter.py              本地音频工具链
+├── metadata.py               标签与封面迁移
+├── audio_validation.py       基础校验与完整解码校验
+├── scanner.py                文件扫描
+├── models.py                 数据模型、配置与路径
+├── session_store.py          任务保存与恢复
+├── file_details.py           文件与音频详情
+├── client_diagnostics.py     客户端兼容性诊断
+├── single_instance.py         单实例与窗口唤起
+├── diagnostics.py            打包自检
+└── qqmusic_converter_gui.py   启动入口
+tests/                        回归与集成测试
+build.ps1                     测试与打包脚本
+qqmusic_converter.spec        PyInstaller 资源清单
 ```
 
-## 参考与依赖
+模块约定见 [源码说明](src/readme.md)。
 
-- 解密思路参考 [decrypt-mflac-frida](https://github.com/Noisrev/decrypt-mflac-frida)。
-- 音频工具：[FLAC](https://xiph.org/flac/)、[Vorbis Tools](https://xiph.org/downloads/)、[LAME](https://lame.sourceforge.io/)、可选 [FFmpeg](https://ffmpeg.org/)。
-- 拖拽：[TkinterDnD2](https://github.com/Eliav2/tkinterdnd2)。
-- 标签：[Mutagen](https://mutagen.readthedocs.io/en/latest/user/id3.html)。
+</details>
+
+## 致谢与许可
+
+解密思路参考 [decrypt-mflac-frida](https://github.com/Noisrev/decrypt-mflac-frida)。感谢 [Frida](https://frida.re/)、[FLAC](https://xiph.org/flac/)、[Vorbis Tools](https://xiph.org/downloads/)、[LAME](https://lame.sourceforge.io/)、[FFmpeg](https://ffmpeg.org/)、[TkinterDnD2](https://github.com/Eliav2/tkinterdnd2) 和 [Mutagen](https://mutagen.readthedocs.io/)。
+
+项目用于个人学习与本地文件处理。项目自身代码使用 [MIT License](LICENSE)，第三方组件遵循各自许可，详见 [第三方说明](THIRD_PARTY_NOTICES.md)。
