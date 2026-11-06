@@ -1,214 +1,189 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-批量转换工作器 - 纯逻辑，不依赖 GUI
-"""
+"""批处理、输出提交与错误记录，不依赖 GUI。"""
 
+import os
 import shutil
+import tempfile
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Callable
+from typing import Callable, Dict, List, Optional
 
-from models import FileItem, TYPE_LABELS
+from models import USER_DIR, DECRYPTED_EXTENSIONS, FileItem, ProcessingResult
+from metadata import copy_tags
+from session_store import file_signature
 from decryptor import QQMusicDecryptor
 from converter import AudioConverter
+from audio_validation import AudioValidator
 
 
 class BatchConverter:
-    """批量音频转换工作器"""
-
-    def __init__(self, decryptor: QQMusicDecryptor, converter: AudioConverter):
+    def __init__(self, decryptor: QQMusicDecryptor, converter: AudioConverter,
+                 log_path: Optional[Path] = None, validator=None):
         self.decryptor = decryptor
         self.converter = converter
+        self.log_path = log_path if log_path is not None else USER_DIR / "error.log"
+        self.validator = validator if validator is not None else AudioValidator(converter)
 
-    def _determine_output_path(self, file_item: FileItem, output_dir: Path,
-                                output_format: str) -> Tuple[Optional[Path], str]:
-        """
-        确定单个文件的输出路径。
-        返回 (output_path, status_or_empty)，status 非空表示需要跳过/报错。
-        """
-        if output_format == 'keep':
-            if file_item.file_type == 'qmc_mflac':
-                ext = '.flac'
-            elif file_item.file_type == 'qmc_mgg':
-                ext = '.ogg'
-            elif file_item.file_type == 'qmc_mmp4':
-                ext = '.mp4'
+    @staticmethod
+    def _publish(staged: Path, desired: Path) -> Path:
+        """仅提交完整文件；并发实例也不能覆盖已有输出。"""
+        index = 1
+        while True:
+            candidate = desired if index == 1 else desired.with_name(
+                f"{desired.stem} ({index}){desired.suffix}")
+            if candidate.exists():
+                index += 1
+                continue
+            try:
+                if os.name == "nt":
+                    # Windows rename 在目标已存在时失败，不能用 replace。
+                    staged.rename(candidate)
+                else:
+                    os.link(staged, candidate)
+                    staged.unlink()
+                return candidate
+            except FileExistsError:
+                index += 1
+
+    def process_single(self, item: FileItem, output_dir: Path,
+                       output_format: str, quality: str, on_stage=None, verify_full=False) -> ProcessingResult:
+        def stage(label, percent=None):
+            if on_stage:
+                on_stage(label, percent)
+        if output_format not in ("keep", "mp3"):
+            raise ValueError(f"未知输出格式: {output_format}")
+        if verify_full and not self.converter.ffmpeg_ok:
+            raise RuntimeError('完整解码校验需要 ffmpeg.exe，请安装后重试，或取消此选项使用基础校验')
+        if output_format == 'mp3':
+            reason = self.converter.mp3_unavailable_reason(item.file_type)
+            if reason:
+                return ProcessingResult('skipped', message=reason)
+
+        extensions = DECRYPTED_EXTENSIONS
+        suffix = ".mp3" if output_format == "mp3" else extensions.get(
+            item.file_type, item.path.suffix)
+        desired = output_dir / (item.path.stem + suffix)
+        if desired.resolve() == item.path.resolve():
+            return ProcessingResult("skipped", message="源文件已在输出位置，无需复制")
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # 与最终文件同一卷，确保提交是原子操作；失败只留下原文件。
+        with tempfile.TemporaryDirectory(prefix=".qqmusic-", dir=output_dir) as folder:
+            work_dir = Path(folder)
+            current_path, current_type = item.path, item.file_type
+            if item.file_type.startswith("qmc_"):
+                stage('解密')
+                current_path = work_dir / ("decoded" + extensions[item.file_type])
+                self.decryptor.decrypt(item.path, current_path)
+                current_type = item.file_type + "_decrypted"
+            staged = work_dir / ("result" + suffix)
+            if output_format == "keep":
+                stage('复制')
+                shutil.copy2(current_path, staged)
             else:
-                ext = file_item.path.suffix
-            return output_dir / (file_item.path.stem + ext), ""
-        else:
-            # 统一转 MP3
-            if file_item.file_type == 'qmc_mmp4':
-                return None, "skipped"
-            return output_dir / (file_item.path.stem + '.mp3'), ""
-
-    def _decrypt_if_needed(self, file_item: FileItem, output_dir: Path) -> Tuple[Path, str, bool]:
-        """
-        如果是加密文件则解密。
-        返回 (current_path, decrypted_type, success)
-        """
-        if not file_item.file_type.startswith('qmc_'):
-            return file_item.path, file_item.file_type, True
-
-        tmp_suffix = file_item.path.suffix.replace('.', '_')
-        decrypted_path = output_dir / (file_item.path.stem + f"{tmp_suffix}.decrypted.tmp")
-
-        if self.decryptor.decrypt(file_item.path, decrypted_path):
-            if file_item.file_type == 'qmc_mflac':
-                dec_type = 'qmc_mflac_decrypted'
-            elif file_item.file_type == 'qmc_mgg':
-                dec_type = 'qmc_mgg_decrypted'
-            elif file_item.file_type == 'qmc_mmp4':
-                dec_type = 'qmc_mmp4_decrypted'
-            else:
-                dec_type = file_item.file_type
-            return decrypted_path, dec_type, True
-        else:
-            return file_item.path, file_item.file_type, False
-
-    def _convert_or_copy(self, file_item: FileItem, current_path: Path, output_path: Path,
-                         decrypted_type: str, output_format: str, quality: str) -> Tuple[bool, str]:
-        """
-        根据输出格式执行转换或复制。
-        返回 (success, error_msg)
-        """
-        if output_format == 'keep':
-            # 保持原格式
-            if current_path != file_item.path:
-                if output_path.exists():
-                    output_path.unlink()
-                shutil.move(str(current_path), str(output_path))
-            else:
-                shutil.copy2(str(current_path), str(output_path))
-            return True, ""
-        else:
-            # 转 MP3
-            if self.converter.convert_to_mp3(current_path, output_path, decrypted_type, quality):
-                # 清理临时解密文件
-                if current_path != file_item.path and current_path.exists():
-                    try:
-                        current_path.unlink()
-                    except:
-                        pass
-                return True, ""
-            else:
-                return False, "转码失败"
-
-    def process_single(self, file_item: FileItem, output_dir: Path,
-                       output_format: str, quality: str) -> Tuple[bool, str]:
-        """
-        处理单个文件。
-        返回 (success, error_msg)
-        """
-        # 1. 确定输出路径
-        output_path, special_status = self._determine_output_path(
-            file_item, output_dir, output_format
-        )
-
-        if special_status == "skipped":
-            return False, ".mmp4 (E-AC3格式) 暂不支持转 MP3，请选择保持原格式"
-
-        # 2. 解密（如果需要）
-        current_path, decrypted_type, ok = self._decrypt_if_needed(file_item, output_dir)
-        if not ok:
-            return False, "FRIDA 解密失败"
-
-        # 3. 转换或复制
-        ok, err = self._convert_or_copy(
-            file_item, current_path, output_path, decrypted_type, output_format, quality
-        )
-        if not ok:
-            # 尝试清理临时解密文件
-            if current_path != file_item.path and current_path.exists():
+                self.converter.convert_to_mp3(current_path, staged, current_type, quality, on_stage=on_stage)
+            if not staged.is_file() or staged.stat().st_size == 0:
+                raise RuntimeError("处理未生成有效输出文件")
+            warning = ""
+            if output_format == "mp3" and current_type != "standard_mp3":
+                stage('保留标签与封面')
+                # 标签失败不能破坏已编码的音频；在独立副本写入后再替换。
+                tagged = work_dir / "tagged.mp3"
                 try:
-                    current_path.unlink()
-                except:
-                    pass
-            return False, err
+                    shutil.copy2(staged, tagged)
+                    copy_tags(current_path, tagged)
+                    tagged.replace(staged)
+                except Exception as exc:
+                    warning = f"音频转换成功，但标签/封面未保留: {exc}"
+            stage('完整解码校验' if verify_full else '基础校验')
+            validation = self.validator.validate(current_path, staged, full=verify_full)
+            stage('保存结果')
+            return ProcessingResult("done", output_path=self._publish(staged, desired), warning=warning, validation=validation)
 
-        return True, ""
+    def _log_error(self, item: FileItem) -> str:
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as stream:
+                stream.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {item.path}\n"
+                             f"  类型: {item.file_type}\n  错误: {item.error_msg}\n\n")
+            return ""
+        except OSError as exc:
+            return f"无法写入日志 {self.log_path}: {exc}"
 
     def process_batch(self, files: List[FileItem], output_dir: Path,
                       output_format: str, quality: str,
                       on_status: Optional[Callable] = None,
                       on_progress: Optional[Callable] = None,
                       on_error: Optional[Callable] = None,
-                      stop_check: Optional[Callable] = None) -> Dict:
-        """
-        批量处理文件。
-
-        回调签名：
-            on_status(file_item: FileItem, status_text: str, color: str)
-            on_progress(current_index: int, total: int)
-            on_error(file_item: FileItem, error_msg: str)
-            stop_check() -> bool
-
-        返回统计：{'done': int, 'error': int, 'skipped': int}
-        """
-        total = len(files)
-        stats = {'done': 0, 'error': 0, 'skipped': 0}
-
-        # 如果有加密文件，先连接 FRIDA
-        has_encrypted = any(f.file_type.startswith('qmc_') for f in files)
-        if has_encrypted:
-            if on_status:
-                on_status(None, "正在连接 QQ 音乐...", "blue")
-            if not self.decryptor.connect():
-                # 全部标记为失败
-                for f in files:
-                    f.status = 'error'
-                    f.error_msg = "无法 attach 到 QQMusic.exe"
-                    if on_error:
-                        on_error(f, f.error_msg)
-                    if on_status:
-                        on_status(f, '失败', 'red')
-                    stats['error'] += 1
-                return stats
-
-        for i, file_item in enumerate(files):
-            if stop_check and stop_check():
-                break
-
-            file_item.status = 'converting'
-            if on_status:
-                on_status(file_item, '处理中', 'blue')
-
-            try:
-                ok, err = self.process_single(file_item, output_dir, output_format, quality)
-                if ok:
-                    file_item.status = 'done'
-                    if on_status:
-                        on_status(file_item, '已完成', 'green')
-                    stats['done'] += 1
-                else:
-                    if err == ".mmp4 (E-AC3格式) 暂不支持转 MP3，请选择保持原格式":
-                        file_item.status = 'skipped'
-                        file_item.error_msg = err
-                        if on_status:
-                            on_status(file_item, '不支持转MP3', 'gray')
-                        stats['skipped'] += 1
-                    else:
-                        file_item.status = 'error'
-                        file_item.error_msg = err
-                        if on_error:
-                            on_error(file_item, err)
-                        if on_status:
-                            on_status(file_item, '失败', 'red')
-                        stats['error'] += 1
-            except Exception as e:
-                file_item.status = 'error'
-                file_item.error_msg = str(e)
-                if on_error:
-                    on_error(file_item, str(e))
+                      stop_check: Optional[Callable] = None,
+                      on_stage: Optional[Callable] = None, verify_full=False) -> Dict:
+        stats = dict(done=0, error=0, skipped=0, warnings=0, stopped=False, remaining=0,
+                     log_path=str(self.log_path), log_error="")
+        connection_attempted = False
+        connection_error = ""
+        try:
+            for index, item in enumerate(files):
+                if stop_check and stop_check():
+                    stats.update(stopped=True, remaining=len(files) - index)
+                    break
+                item.status, item.error_msg, item.output_path = "converting", "", None
+                item.warning_msg = ""
+                item.source_signature = file_signature(item.path)
+                item.output_signature = None
+                item.validation_msg = ''
                 if on_status:
-                    on_status(file_item, '失败', 'red')
-                stats['error'] += 1
+                    on_status(item, "处理中", "blue")
+                try:
+                    if not item.path.is_file():
+                        raise FileNotFoundError(f'源文件不存在或无法访问: {item.path}')
+                    needs_decrypt = item.file_type.startswith("qmc_") and not (
+                        output_format == "mp3" and self.converter.mp3_unavailable_reason(item.file_type))
+                    if needs_decrypt:
+                        if not connection_attempted:
+                            connection_attempted = True
+                            if on_status:
+                                on_status(None, "正在连接 QQ 音乐…", "blue")
+                            if on_stage:
+                                on_stage(item, '连接 QQ 音乐', None)
+                            try:
+                                self.decryptor.connect()
+                            except Exception as exc:
+                                connection_error = str(exc)
+                        if connection_error:
+                            raise RuntimeError(connection_error)
+                    stage_callback = (lambda label, percent=None: on_stage(item, label, percent)) if on_stage else None
+                    if stage_callback or verify_full:
+                        result = self.process_single(item, output_dir, output_format, quality,
+                                                     on_stage=stage_callback, verify_full=verify_full)
+                    else:
+                        result = self.process_single(item, output_dir, output_format, quality)
+                except Exception as exc:
+                    result = ProcessingResult("error", message=str(exc))
 
-            if on_progress:
-                on_progress(i + 1, total)
-
-        # 断开 FRIDA
-        if has_encrypted:
-            self.decryptor.disconnect()
-
+                item.status = result.status
+                item.error_msg = result.message
+                item.output_path = result.output_path
+                item.output_signature = file_signature(result.output_path)
+                item.warning_msg = result.warning
+                item.validation_msg = result.validation
+                if result.warning:
+                    stats['warnings'] += 1
+                stats[result.status] += 1
+                if result.status == "error":
+                    stats["log_error"] = self._log_error(item) or stats["log_error"]
+                    if on_error:
+                        on_error(item, result.message)
+                if on_status:
+                    label, color = {"done": ("已完成", "green"),
+                                    "error": ("失败", "red"),
+                                    "skipped": ("已跳过", "gray")}[result.status]
+                    if result.warning:
+                        label, color = "完成（有提示）", "orange"
+                    on_status(item, label, color)
+                if on_progress:
+                    on_progress(index + 1, len(files))
+        finally:
+            if connection_attempted:
+                self.decryptor.disconnect()
         return stats

@@ -18,3 +18,8 @@ __pycache__/
 *.zip
 *.7z
 *.tar.gz
+
+# 本地环境与构建产物
+.venv/
+build/
+dist/

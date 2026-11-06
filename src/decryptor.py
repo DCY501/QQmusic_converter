@@ -1,88 +1,72 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-QQ音乐 FRIDA Hook 解密器
-"""
+"""QQ 音乐 FRIDA 会话；异常保留原因，临时文件按调用隔离。"""
 
-import tempfile
-import hashlib
 import shutil
+import tempfile
+import ctypes
 from pathlib import Path
 
 from models import DATA_DIR
+from client_diagnostics import inspect_session, connection_error
 
 
 class QQMusicDecryptor:
-    """QQ音乐 FRIDA hook 解密器"""
-
     def __init__(self):
         self.session = None
         self.script = None
         self._connected = False
+        self.last_diagnostic = {}
 
-    def is_qqmusic_running(self) -> bool:
-        """检查 QQ 音乐是否在运行"""
-        try:
-            import frida
-            frida.attach("QQMusic.exe")
-            return True
-        except:
-            return False
-
-    def connect(self) -> bool:
-        """连接 QQ 音乐进程"""
+    def connect(self):
         if self._connected:
-            return True
+            return
+        self.last_diagnostic = {}
         try:
             import frida
             self.session = frida.attach("QQMusic.exe")
-            js_path = DATA_DIR / "hook_qqmusic_v17.js"
-            with open(js_path, "r", encoding="utf-8") as f:
-                js_code = f.read()
+            self.last_diagnostic = inspect_session(self.session)
+            if self.last_diagnostic['error']:
+                raise RuntimeError(self.last_diagnostic['error'])
+            js_code = (DATA_DIR / "hook_qqmusic_v17.js").read_text(encoding="utf-8")
             self.script = self.session.create_script(js_code)
             self.script.load()
             self._connected = True
-            return True
-        except Exception as e:
-            print(f"[FRIDA] 连接失败: {e}")
-            return False
+        except Exception as exc:
+            self.disconnect()
+            message = self.last_diagnostic.get('error') or connection_error(exc)
+            raise RuntimeError(message) from exc
 
-    def decrypt(self, input_path: Path, output_path: Path) -> bool:
-        """解密单个文件"""
+    def decrypt(self, input_path: Path, output_path: Path):
         if not self._connected:
-            raise RuntimeError("未连接 QQ 音乐")
-
-        # 必须使用绝对路径，因为 FRIDA hook 在 QQ 音乐进程内执行，
-        # 其工作目录与 Python 脚本不同，相对路径会解析失败
-        input_path = input_path.resolve()
-
-        # FRIDA File API 不支持中文路径，用纯 ASCII 临时文件
-        tmp_dir = Path(tempfile.gettempdir()) / "qqmusic_decrypt"
-        tmp_dir.mkdir(exist_ok=True)
-        tmp_name = hashlib.md5(str(input_path).encode()).hexdigest()
-        tmp_path = tmp_dir / tmp_name
-
-        try:
-            result = self.script.exports_sync.decrypt(str(input_path), str(tmp_path))
-            if result and result.get("success"):
-                if output_path.exists():
-                    output_path.unlink()
+            raise RuntimeError("尚未连接 QQ 音乐")
+        with tempfile.TemporaryDirectory(prefix="qqmusic_decrypt_") as folder:
+            tmp_path = Path(folder) / "decoded.bin"
+            # 老版 Frida File 写路径需 ASCII；中文用户名下优先使用 Windows 短路径。
+            script_path = tmp_path
+            if not folder.isascii():
+                buffer = ctypes.create_unicode_buffer(32768)
+                length = ctypes.windll.kernel32.GetShortPathNameW(str(folder), buffer, len(buffer))
+                if not length or length >= len(buffer) or not buffer.value.isascii():
+                    raise RuntimeError('临时目录含中文且无法获取短路径，请将 TEMP 指向可写的英文目录后重启程序')
+                script_path = Path(buffer.value) / 'decoded.bin'
+            try:
+                result = self.script.exports_sync.decrypt(str(input_path.resolve()), str(script_path))
+                if not result or not result.get("success"):
+                    raise RuntimeError(f"解密脚本未返回成功结果: {result}")
+                if not tmp_path.is_file() or tmp_path.stat().st_size != result.get("size"):
+                    raise RuntimeError("解密输出大小与读取结果不一致")
                 shutil.move(str(tmp_path), str(output_path))
-                return True
-            return False
-        except Exception as e:
-            print(f"[FRIDA] 解密出错: {e}")
-            # 清理临时文件
-            if tmp_path.exists():
-                tmp_path.unlink()
-            return False
+            except Exception as exc:
+                detail = str(exc)
+                label = '文件无法解密，请确认此文件可由当前账号和客户端使用' if 'Open 失败' in detail else '解密失败'
+                raise RuntimeError(f"{label}: {exc}") from exc
 
     def disconnect(self):
-        """断开连接"""
         if self.session:
             try:
                 self.session.detach()
-            except:
+            except Exception:
                 pass
         self.session = None
         self.script = None

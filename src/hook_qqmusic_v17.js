@@ -1,4 +1,7 @@
 const TARGET_DLL = "QQMusicCommon.dll";
+if (Process.arch !== 'ia32') {
+    throw new Error('此解密接口仅支持 32 位 QQ 音乐，当前架构: ' + Process.arch);
+}
 
 var mod = Process.findModuleByName(TARGET_DLL);
 if (!mod) {
@@ -25,7 +28,8 @@ var EncAndDesMediaFileReadAddr = mod.findExportByName(
   "?Read@EncAndDesMediaFile@@QAEKPAEK_J@Z"
 );
 
-if (!EncAndDesMediaFileConstructorAddr || !EncAndDesMediaFileOpenAddr || !EncAndDesMediaFileReadAddr) {
+if (!EncAndDesMediaFileConstructorAddr || !EncAndDesMediaFileDestructorAddr ||
+    !EncAndDesMediaFileOpenAddr || !EncAndDesMediaFileGetSizeAddr || !EncAndDesMediaFileReadAddr) {
     throw new Error("找不到 EncAndDesMediaFile 的关键函数，QQ 音乐版本可能不兼容");
 }
 
@@ -68,31 +72,37 @@ rpc.exports = {
   decrypt: function (srcFileName, tmpFileName) {
     var EncAndDesMediaFileObject = Memory.alloc(0x28);
     EncAndDesMediaFileConstructor(EncAndDesMediaFileObject);
+    try {
+        var fileNameUtf16 = Memory.allocUtf16String(srcFileName);
+        var opened = EncAndDesMediaFileOpen(EncAndDesMediaFileObject, fileNameUtf16, 1, 0);
+        if (!opened) {
+            throw new Error("Open 失败，文件可能不存在或无法解密");
+        }
 
-    var fileNameUtf16 = Memory.allocUtf16String(srcFileName);
-    var opened = EncAndDesMediaFileOpen(EncAndDesMediaFileObject, fileNameUtf16, 1, 0);
-    if (!opened) {
+        var fileSize = EncAndDesMediaFileGetSize(EncAndDesMediaFileObject);
+        if (fileSize === 0) {
+            throw new Error("文件大小为 0");
+        }
+
+        var buffer = Memory.alloc(fileSize);
+        var readSize = EncAndDesMediaFileRead(EncAndDesMediaFileObject, buffer, fileSize, 0);
+        if (readSize !== fileSize) {
+            throw new Error("读取不完整：预期 " + fileSize + " 字节，实际 " + readSize + " 字节");
+        }
+
+        var data = buffer.readByteArray(fileSize);
+
+        // 注意: File API 不支持中文路径，tmpFileName 必须是纯 ASCII
+        var tmpFile = new File(tmpFileName, "wb");
+        try {
+            tmpFile.write(data);
+        } finally {
+            tmpFile.close();
+        }
+
+        return { success: true, size: fileSize };
+    } finally {
         EncAndDesMediaFileDestructor(EncAndDesMediaFileObject);
-        throw new Error("Open 失败，文件可能不存在或无法解密");
     }
-
-    var fileSize = EncAndDesMediaFileGetSize(EncAndDesMediaFileObject);
-    if (fileSize === 0) {
-        EncAndDesMediaFileDestructor(EncAndDesMediaFileObject);
-        throw new Error("文件大小为 0");
-    }
-
-    var buffer = Memory.alloc(fileSize);
-    var readSize = EncAndDesMediaFileRead(EncAndDesMediaFileObject, buffer, fileSize, 0);
-
-    var data = buffer.readByteArray(fileSize);
-    EncAndDesMediaFileDestructor(EncAndDesMediaFileObject);
-    
-    // 注意: File API 不支持中文路径，tmpFileName 必须是纯 ASCII
-    var tmpFile = new File(tmpFileName, "wb");
-    tmpFile.write(data);
-    tmpFile.close();
-    
-    return { success: true, size: fileSize };
   },
 };
