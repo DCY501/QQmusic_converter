@@ -143,6 +143,6 @@ qqmusic_converter.spec        PyInstaller 资源清单
 
 ## 致谢与许可
 
-解密思路参考 [decrypt-mflac-frida](https://github.com/Noisrev/decrypt-mflac-frida)。感谢 [Frida](https://frida.re/)、[FLAC](https://xiph.org/flac/)、[Vorbis Tools](https://xiph.org/downloads/)、[LAME](https://lame.sourceforge.io/)、[FFmpeg](https://ffmpeg.org/)、[TkinterDnD2](https://github.com/Eliav2/tkinterdnd2) 和 [Mutagen](https://mutagen.readthedocs.io/)。
+解密思路参考 [decrypt-mflac-frida](https://github.com/yllhwa/decrypt-mflac-frida)。感谢 [Frida](https://frida.re/)、[FLAC](https://xiph.org/flac/)、[Vorbis Tools](https://xiph.org/downloads/)、[LAME](https://lame.sourceforge.io/)、[FFmpeg](https://ffmpeg.org/)、[TkinterDnD2](https://github.com/Eliav2/tkinterdnd2) 和 [Mutagen](https://mutagen.readthedocs.io/)。
 
 项目用于个人学习与本地文件处理。项目自身代码使用 [MIT License](LICENSE)，第三方组件遵循各自许可，详见 [第三方说明](THIRD_PARTY_NOTICES.md)。
